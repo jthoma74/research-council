@@ -40,12 +40,58 @@ Claude Code auto-discovers it. Trigger it by asking for research in the shape it
 ## Requirements
 
 - **[Claude Code](https://docs.claude.com/en/docs/claude-code)** — the skill orchestrates subagents via the Agent/Task tool, so it needs the agent-spawning harness (it has a documented single-agent degraded mode if that's unavailable).
-- **[Tavily MCP](https://docs.tavily.com/)** — Finder A's primary engine. Configure it as an MCP server in Claude Code.
-- **Firecrawl API key** — Finder B's engine. Set `FIRECRAWL_API_KEY` in your environment. Get a key at [firecrawl.dev](https://www.firecrawl.dev/).
-- **Web search** — Finder C uses the harness's built-in `WebSearch`.
+- **[Tavily](https://tavily.com/)** — Finder A's primary engine. Runs as an **MCP server** (needs a Tavily API key, `tvly-…`).
+- **[Firecrawl](https://www.firecrawl.dev/)** — Finder B's engine. Called over HTTP; needs the `FIRECRAWL_API_KEY` **environment variable** (`fc-…`).
+- **Web search** — Finder C uses the harness's built-in `WebSearch`. No key.
 - *(Optional)* **[SearXNG](https://github.com/searxng/searxng)** — if you self-host a SearXNG instance, Finder C can use it as an extra retrieval index. Purely a nice-to-have; the skill falls back to `WebSearch` without it.
 
 If neither Tavily nor Firecrawl is available, the skill tells you rather than inventing a fallback.
+
+## Setting up the two API keys
+
+The two engines get their keys in **different** ways — one is an MCP server, the other an environment variable. Get the keys first: [app.tavily.com](https://app.tavily.com/) for Tavily (`tvly-…`), [firecrawl.dev](https://www.firecrawl.dev/) for Firecrawl (`fc-…`).
+
+### 1. Tavily → an MCP server
+
+The skill reaches Tavily through Claude Code's MCP layer (it loads the tools at runtime via `ToolSearch` for `tavily`). Register the server once — pick either:
+
+**Hosted (easiest):** add Tavily's remote MCP endpoint, passing your key:
+
+```bash
+claude mcp add --transport http tavily "https://mcp.tavily.com/mcp/?tavilyApiKey=tvly-YOUR_KEY_HERE"
+```
+
+**Local (npm):** run Tavily's MCP server locally with the key in its environment:
+
+```bash
+claude mcp add tavily --env TAVILY_API_KEY=tvly-YOUR_KEY_HERE -- npx -y tavily-mcp
+```
+
+Verify it registered with `claude mcp list` (or `/mcp` inside an interactive session). Scope it with `--scope user` if you want it available across all projects rather than just the current one.
+
+### 2. Firecrawl → the `FIRECRAWL_API_KEY` env var
+
+Finder B shells out to `curl`, so the key has to be in the **environment of the process running Claude Code**. Two good options:
+
+**A. Claude Code `settings.json` (recommended — scoped to Claude Code).** Add an `env` block to `~/.claude/settings.json` (user-wide) or `.claude/settings.json` (this project only):
+
+```json
+{
+  "env": {
+    "FIRECRAWL_API_KEY": "fc-YOUR_KEY_HERE"
+  }
+}
+```
+
+**B. Your shell profile (makes it available everywhere).** Add to `~/.zshenv` (zsh) or `~/.bashrc` (bash), then restart your shell:
+
+```bash
+export FIRECRAWL_API_KEY="fc-YOUR_KEY_HERE"
+```
+
+Confirm it's visible to your session with `echo $FIRECRAWL_API_KEY`.
+
+> **Don't commit your keys.** Keep them out of any file you push — `settings.json` with a real key should stay local (Claude Code's `.claude/settings.local.json` is git-ignored by convention and is a good home for it).
 
 ## Output
 
