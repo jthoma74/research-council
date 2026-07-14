@@ -43,7 +43,7 @@ Claude Code auto-discovers it. Trigger it by asking for research in the shape it
 - **[Tavily](https://tavily.com/)** — Finder A's primary engine. Runs as an **MCP server** (needs a Tavily API key, `tvly-…`).
 - **[Firecrawl](https://www.firecrawl.dev/)** — Finder B's engine. Called over HTTP; needs the `FIRECRAWL_API_KEY` **environment variable** (`fc-…`).
 - **Web search** — Finder C uses the harness's built-in `WebSearch`. No key.
-- *(Optional)* **[SearXNG](https://github.com/searxng/searxng)** — if you self-host a SearXNG instance, Finder C can use it as an extra retrieval index. Purely a nice-to-have; the skill falls back to `WebSearch` without it.
+- *(Optional)* **[SearXNG](https://github.com/searxng/searxng)** — if you self-host a SearXNG instance, Finder C can use it as an extra retrieval index. Purely a nice-to-have; the skill falls back to `WebSearch` without it. Setup (Docker or bare-metal) in [*Optional: self-host SearXNG*](#optional-self-host-searxng-a-third-retrieval-index) below.
 
 If neither Tavily nor Firecrawl is available, the skill tells you rather than inventing a fallback.
 
@@ -92,6 +92,56 @@ export FIRECRAWL_API_KEY="fc-YOUR_KEY_HERE"
 Confirm it's visible to your session with `echo $FIRECRAWL_API_KEY`.
 
 > **Don't commit your keys.** Keep them out of any file you push — `settings.json` with a real key should stay local (Claude Code's `.claude/settings.local.json` is git-ignored by convention and is a good home for it).
+
+## Optional: self-host SearXNG (a third retrieval index)
+
+Finder C (community/adversarial) uses the harness's built-in `WebSearch` by default. If you run your own [SearXNG](https://github.com/searxng/searxng) — a self-hostable metasearch engine that merges Brave, DuckDuckGo, Startpage, and Google behind one JSON API — Finder C can use it as its primary index instead, giving the finders one more *independent* retrieval engine. Purely a nice-to-have; **the skill runs fine without it** and falls back to `WebSearch` when it's absent or down.
+
+You don't have to set this up by hand: **if you ask for the third index and SearXNG isn't running, the skill will offer you these two options and walk you through whichever you pick.** They're written out here so you can do it yourself.
+
+### Option 1 — Docker (simplest, cross-platform)
+
+```bash
+# start SearXNG on http://localhost:8080, config persisted in ./searxng/
+docker run -d --name searxng -p 8080:8080 \
+  -v "$(pwd)/searxng:/etc/searxng" \
+  docker.io/searxng/searxng:latest
+```
+
+The first run generates `./searxng/settings.yml`. **You must enable JSON output** (SearXNG ships with it off, and the skill queries `&format=json`) — add `json` to the formats list, then restart:
+
+```yaml
+# ./searxng/settings.yml
+search:
+  formats:
+    - html
+    - json
+```
+
+```bash
+docker restart searxng
+```
+
+### Option 2 — bare metal (Python venv + a process manager)
+
+```bash
+git clone https://github.com/searxng/searxng ~/searxng && cd ~/searxng
+python3 -m venv venv && source venv/bin/activate
+pip install -e .
+export SEARXNG_SETTINGS_PATH=~/searxng/settings.yml   # enable `json` in this file (as above)
+python -m searx.webapp                                 # serves on http://localhost:8080
+```
+
+To keep it always-on, wrap that command in a process manager — **systemd** (`systemctl --user`) on Linux, **launchd** (a `~/Library/LaunchAgents/*.plist` with `RunAtLoad` + `KeepAlive`) on macOS. Note that `KeepAlive` only relaunches on *exit*, so a *hung* process (listening but returning nothing) won't auto-restart — restart it manually if health checks return `000`.
+
+### Verify it's up
+
+```bash
+curl -s -m 5 "http://localhost:8080/search?q=test&format=json" -o /dev/null -w 'HTTP %{http_code}\n'
+# HTTP 200 = good; 000 = not responding; 403 = JSON format not enabled in settings.yml
+```
+
+The skill defaults to `http://localhost:8080`. If you run it on a different host or port, just tell the skill when you invoke it.
 
 ## Output
 
